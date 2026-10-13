@@ -29,6 +29,22 @@ Scripts are grouped by what they manage. When a script could fit in two folders,
 - Script names follow `Verb-Noun.ps1` and use an [approved verb](https://learn.microsoft.com/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands) (`Get-Verb`) with a singular noun.
 - Every script has comment-based help: `Get-Help .\Script.ps1 -Full`
 - Scripts that change anything support `-WhatIf` / `-Confirm`.
+- Scripts are standalone: there are no shared modules, so every script works as a single-file download.
+
+### Logging
+
+Scripts that write logs share a standard block (`pwsh-toolbox standard logging v1`). Copy it unchanged into each new script.
+
+| | |
+|---|---|
+| Location (elevated) | `%ProgramData%\pwsh-toolbox\Logs\<ScriptName>\` |
+| Location (not elevated) | `%LOCALAPPDATA%\pwsh-toolbox\Logs\<ScriptName>\` |
+| File name | `<ScriptName>_<yyyyMMdd-HHmmss>.csv`, one file per run |
+| Access | `%ProgramData%\pwsh-toolbox` is owned by Administrators and accessible only to Administrators and SYSTEM. Subfolders inherit this. |
+| Retention | Each script deletes its own logs older than 90 days (`-LogRetentionDays`, `0` = keep all) |
+| Override | `-LogPath <file.csv>` |
+
+The script name is hardcoded in each script, so a renamed copy still logs to the same folder.
 
 ## Usage
 

@@ -12,7 +12,12 @@
     Wildcard name patterns to keep paired (e.g. your keyboard/mouse).
 
 .PARAMETER LogPath
-    CSV audit log location.
+    CSV audit log path for this run. Not written under -WhatIf.
+    Default (elevated):     $env:ProgramData\pwsh-toolbox\Logs\Remove-BluetoothPairing\Remove-BluetoothPairing_<timestamp>.csv
+    Default (not elevated): $env:LOCALAPPDATA\pwsh-toolbox\Logs\Remove-BluetoothPairing\Remove-BluetoothPairing_<timestamp>.csv
+
+.PARAMETER LogRetentionDays
+    Delete this script's logs older than this many days from the log folder. 0 = keep all. Default: 90.
 
 .EXAMPLE
     .\Remove-BluetoothPairing.ps1 -WhatIf
@@ -25,10 +30,73 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
     [string[]]$ExcludeName = @(),
-    [string]$LogPath = "$env:ProgramData\BtUnpair\unpair-$(Get-Date -Format yyyyMMdd-HHmmss).csv"
+    [string]$LogPath,
+
+    [ValidateRange(0, 3650)]
+    [int]$LogRetentionDays = 90
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ---- pwsh-toolbox standard logging v1: keep this block identical in every script ----
+
+function Protect-ToolboxFolder {
+    # Owner = Administrators; access = Administrators + SYSTEM only; children inherit.
+    # (ProgramData lets standard users create and modify files by default.)
+    param([Parameter(Mandatory)][string]$Path)
+    $allowed = 'S-1-5-32-544', 'S-1-5-18'   # BUILTIN\Administrators, NT AUTHORITY\SYSTEM
+    if (Test-Path -LiteralPath $Path) {
+        $acl   = Get-Acl -LiteralPath $Path
+        $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+        $other = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) |
+            Where-Object { $_.IdentityReference.Value -notin $allowed })
+        if ($acl.AreAccessRulesProtected -and $owner -in $allowed -and $other.Count -eq 0) { return }
+    } else {
+        New-Item -ItemType Directory -Path $Path -Force -WhatIf:$false | Out-Null
+    }
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetOwner((New-Object System.Security.Principal.SecurityIdentifier($allowed[0])))
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($sid in $allowed) {
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+            (New-Object System.Security.Principal.SecurityIdentifier($sid)),
+            'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+    }
+    Set-Acl -LiteralPath $Path -AclObject $acl -WhatIf:$false
+}
+
+function Initialize-ToolboxLog {
+    # Returns the CSV log path for this run and makes sure its folder exists.
+    # Default: <ProgramData|LocalAppData>\pwsh-toolbox\Logs\<ScriptName>\<ScriptName>_<timestamp>.csv
+    # (ProgramData when elevated, locked down; LocalAppData otherwise).
+    # Deletes this script's logs in that folder older than RetentionDays (0 = keep all).
+    param(
+        [Parameter(Mandatory)][string]$ScriptName,
+        [string]$LogPath,
+        [int]$RetentionDays = 90
+    )
+    if (-not $LogPath) {
+        $isAdmin = ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()
+            ).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+        $base = if ($isAdmin) { $env:ProgramData } else { $env:LOCALAPPDATA }
+        $root = Join-Path $base 'pwsh-toolbox'
+        if ($isAdmin) { Protect-ToolboxFolder -Path $root }
+        $LogPath = Join-Path $root "Logs\$ScriptName\${ScriptName}_$(Get-Date -Format yyyyMMdd-HHmmss).csv"
+    }
+    $dir = Split-Path -Parent $LogPath
+    if (-not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force -WhatIf:$false | Out-Null
+    }
+    if ($RetentionDays -gt 0 -and -not $WhatIfPreference) {
+        $cutoff = (Get-Date).AddDays(-$RetentionDays)
+        Get-ChildItem -LiteralPath $dir -Filter "${ScriptName}_*.csv" -File |
+            Where-Object { $_.LastWriteTime -lt $cutoff } |
+            Remove-Item -Force
+    }
+    $LogPath
+}
+
+# ---- end pwsh-toolbox standard logging v1 ----
 
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
     throw 'Run this in Windows PowerShell 5.1 (powershell.exe). PowerShell 7 has no WinRT projection.'
@@ -105,11 +173,12 @@ $results = foreach ($d in $devices) {
 
 $results | Format-Table Name, Type, Status, Detail -AutoSize
 
-# Audit log (skipped automatically under -WhatIf)
-$logDir = Split-Path -Path $LogPath -Parent
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-$results | Export-Csv -Path $LogPath -NoTypeInformation -Encoding UTF8
-if (Test-Path $LogPath) { Write-Host "Log: $LogPath" }
+# Audit log (skipped under -WhatIf)
+if (-not $WhatIfPreference) {
+    $LogPath = Initialize-ToolboxLog -ScriptName 'Remove-BluetoothPairing' -LogPath $LogPath -RetentionDays $LogRetentionDays
+    $results | Export-Csv -LiteralPath $LogPath -NoTypeInformation -Encoding UTF8
+    Write-Host "Log: $LogPath"
+}
 
 $ok = 'Unpaired', 'AlreadyUnpaired', 'Excluded', 'Skipped'
 if ($results | Where-Object { $_.Status -notin $ok }) { exit 1 } else { exit 0 }
