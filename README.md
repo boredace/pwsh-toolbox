@@ -16,6 +16,7 @@ Scripts are grouped by what they manage. When a script could fit in two folders,
 | `Identity/` | Active Directory, local users/groups, Entra ID |
 | `Cloud/`    | Microsoft 365, Exchange Online, Intune, Azure |
 | `Storage/`  | Disks, file shares, permissions, backup |
+| `Media/`    | Video, images and photo metadata (ffmpeg, OCR, EXIF) |
 
 ## Scripts
 
