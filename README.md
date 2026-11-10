@@ -24,6 +24,7 @@ Scripts are grouped by what they manage. When a script could fit in two folders,
 |---|---|
 | [`Devices/Remove-BluetoothPairing.ps1`](Devices/Remove-BluetoothPairing.ps1) | Unpairs all paired Bluetooth devices (Classic and LE), with name exclusions and a CSV audit log. Requires Windows PowerShell 5.1. |
 | [`Network/Block-FolderOutboundTraffic.ps1`](Network/Block-FolderOutboundTraffic.ps1) | Creates and maintains outbound block firewall rules for every .exe in a folder. Idempotent and self-healing, with prune/rollback and an audit log. |
+| [`Media/Export-CameraFrameAtTime.ps1`](Media/Export-CameraFrameAtTime.ps1) | For each camera clip, find the first frame whose burned-in timestamp reads the target time and save that frame as a full-resolution JPEG. |
 
 ## Conventions
 
